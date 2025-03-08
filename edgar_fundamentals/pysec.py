@@ -4,7 +4,7 @@ Main class that integrates SEC API client with financial calculations.
 """
 
 import pandas as pd
-from utils.sec_api import SECClient
+from .edgar_fundamentals.utils.sec_api import SECClient
 
 class PySEC:
     """Handles SEC data retrieval and financial metric computations."""
