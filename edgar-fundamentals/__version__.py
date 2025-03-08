@@ -1,0 +1,8 @@
+__title__ = 'edgar-fundamentals'
+__description__ = 'Extract financial data from the SEC EDGAR database'
+__url__ = 'https://github.com/farhadab/edgar-financials'
+__version__ = '0.0.1'
+__author__ = 'Miguel Cortés'
+__author_email__ = 'miguelcortes@gmail.com'
+__license__ = 'MIT'
+# __copyright__ = 'Copyright 2025 Miguel Cortés'
