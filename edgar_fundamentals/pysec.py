@@ -5,6 +5,7 @@ Main class that integrates SEC API client with financial calculations.
 
 import pandas as pd
 from edgar_fundamentals.utils.sec_api import SECClient
+from edgar_fundamentals.utils.constants import SEC_KEYS_FINANCIAL_STATEMENTS
 
 class PySEC(SECClient):
     """Handles SEC data retrieval and financial metric computations."""
@@ -16,9 +17,9 @@ class PySEC(SECClient):
         Args:
             user_email (str): User email for SEC API requests.
         """
-        super().__init__(user_email)  # Llamar al constructor de la clase padre
+        super().__init__(user_email)
 
-    def get_company_filings(self, ticker: str) -> pd.DataFrame:
+    def get_company_filings(self, ticker: str) -> pd.DataFrame: 
         """
         Retrieves SEC filings for a given company.
 
@@ -79,7 +80,7 @@ class PySEC(SECClient):
         df_grouped["percent_circulation"] = df_grouped["shares_circulation"] / df_grouped["shares_total"]
         return df_grouped
 
-    def get_financial_statements(self, ticker: str, report_type: str = "K") -> pd.DataFrame:
+    def get_financial_statements(self, ticker: str, report_type: str = "K", rectify_informacion: bool = True) -> pd.DataFrame:
         """
         Retrieves key financial statements from SEC filings.
 
@@ -95,43 +96,14 @@ class PySEC(SECClient):
             facts = self.ticker_company_fact_cache
         else:
             facts = self.get_company_facts(ticker.upper())
-        # Check fiscal end year
-        if report_type=='K':
-            fiscal_month = 'fiscalYearEnd'[0:2]
         # Define key financial metrics
-        financial_keys = {
-            # Balance sheet
-            'Assets': 'Assets',
-            'AssetsCurrent': 'AssetsCurrent',
-            'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents': 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents',
-            'CashAndCashEquivalentsAtCarryingValue': 'CashAndCashEquivalentsAtCarryingValue',
-            'AccountsReceivableNetCurrent': 'AccountsReceivableNetCurrent',
-            'InventoryNet': 'InventoryNet',
-            'AssetsNoncurrent': 'AssetsNoncurrent',
-            'Liabilities': 'Liabilities',
-            'LiabilitiesCurrent': 'LiabilitiesCurrent',
-            'DebtCurrent': 'DebtCurrent',
-            'LiabilitiesNoncurrent': 'LiabilitiesNoncurrent',
-            'LongTermDebtNoncurrent': 'LongTermDebtNoncurrent',
-            'StockholdersEquity': 'StockholdersEquity',
-            'AccountsPayableAndAccruedLiabilitiesCurrent': 'AccountsPayableAndAccruedLiabilitiesCurrent',
-            # Income statment
-            'RevenueFromContractWithCustomerExcludingAssessedTax': 'SalesNet',
-            'OperatingIncomeLoss': 'OperatingIncomeLoss',
-            'ShortTermInvestments':'ShortTermInvestments',
-            'InterestExpense': 'InterestExpense',
-            'IncomeTaxExpenseBenefit': 'IncomeTaxExpenseBenefit',
-            # Cashflow
-            'DepreciationAndAmortization':'DepreciationAndAmortization',
-            'Goodwill': 'Goodwill',
-        }
-        financial_keys = dict(zip(self.get_company_facts(ticker)['us-gaap'].keys(), 
-                             self.get_company_facts(ticker)['us-gaap'].keys()))
+        SEC_KEYS_FINANCIAL_STATEMENTS = dict(zip(self.get_company_facts(ticker)['us-gaap'].keys(), 
+                                            self.get_company_facts(ticker)['us-gaap'].keys()))
         # Extract data for each financial metric
         df_financials = pd.DataFrame()
-        for key, sec_key in financial_keys.items():
-            df = pd.DataFrame(facts["us-gaap"].get(sec_key, {}).get("units", {}).get("USD", []))
-            df["metric"] = key
+        for sec_line_item in SEC_KEYS_FINANCIAL_STATEMENTS:
+            df = pd.DataFrame(facts["us-gaap"].get(sec_line_item, {}).get("units", {}).get("USD", []))
+            df["metric"] = sec_line_item
             df_financials = pd.concat([df_financials, df], ignore_index=True)
         # Convert 'end' to a period-based date format (Monthly)
         df_financials["date"] = pd.to_datetime(df_financials["end"]).dt.to_period("M")
@@ -153,4 +125,31 @@ class PySEC(SECClient):
             df_financials = df_financials[df_financials["form"].str.contains(report_type, na=False)]
         else:
             raise ValueError(f'El valor {report_type} no es válido, solo "K" o "Q"')
-        return df_financials
+        # Create pivot table index financial statments
+        df_financial_statements = df_financials.pivot_table(
+            index='date', 
+            columns='metric', 
+            values='val', 
+            aggfunc='max'
+        )
+        return df_financial_statements.T
+        # if rectify_informacion:
+        #     df_financial_statements = self.rectification_values_financial_statements(df_financial_statements)
+        # return df_financial_statements
+    
+    def rectification_values_financial_statements(self, df):
+        df_nan = df.loc[:, df.isna().any()]  # Filter columns with NaN values
+        columns_nan = df_nan.columns
+        # Dictionary with replacement rules (mathematical expressions)
+        replace = {
+            'StockholdersEquity': 'LiabilitiesAndStockholdersEquity - Liabilities'
+        }
+        # Iterate over columns with NaN values
+        for line_item in columns_nan:
+            if line_item in replace:
+                required_columns = replace[line_item].replace('+', ' ').replace('-', ' ').split()
+                # Check if all required columns exist in df
+                if all(col in df.columns for col in required_columns):
+                    # Evaluate the formula using df.eval() and replace NaN values
+                    df[line_item] = df[line_item].fillna(df.eval(replace[line_item]))
+        return df.T
