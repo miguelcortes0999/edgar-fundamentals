@@ -97,8 +97,8 @@ class PySEC(SECClient):
         else:
             facts = self.get_company_facts(ticker.upper())
         # Define key financial metrics
-        SEC_KEYS_FINANCIAL_STATEMENTS = dict(zip(self.get_company_facts(ticker)['us-gaap'].keys(), 
-                                            self.get_company_facts(ticker)['us-gaap'].keys()))
+        #SEC_KEYS_FINANCIAL_STATEMENTS = dict(zip(self.get_company_facts(ticker)['us-gaap'].keys(), 
+        #                                    self.get_company_facts(ticker)['us-gaap'].keys()))
         # Extract data for each financial metric
         df_financials = pd.DataFrame()
         for sec_line_item in SEC_KEYS_FINANCIAL_STATEMENTS:
@@ -127,12 +127,14 @@ class PySEC(SECClient):
             raise ValueError(f'El valor {report_type} no es válido, solo "K" o "Q"')
         # Create pivot table index financial statments
         df_financial_statements = df_financials.pivot_table(
-            index='date', 
-            columns='metric', 
+            index='metric', 
+            columns='date', 
             values='val', 
             aggfunc='max'
         )
-        return df_financial_statements.T
+        existing_keys = [key for key in SEC_KEYS_FINANCIAL_STATEMENTS if key in df_financial_statements.index]
+        df_financial_statements = df_financial_statements.loc[existing_keys, :]
+        return df_financial_statements
         # if rectify_informacion:
         #     df_financial_statements = self.rectification_values_financial_statements(df_financial_statements)
         # return df_financial_statements
